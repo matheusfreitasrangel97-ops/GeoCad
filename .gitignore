@@ -1,0 +1,17 @@
+# Python compilation artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# PyInstaller build and distribution
+build/
+dist/
+*.spec
+
+# Local application logs and settings
+logs/
+*.log
+.settings/
+.idea/
+.vscode/
