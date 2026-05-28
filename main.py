@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+GeoCad - Sistema de Conversão e Visualização de Arquivos DWG para GIS.
+Ponto de entrada principal do aplicativo.
+"""
+
 import sys
 import os
 

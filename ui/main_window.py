@@ -16,6 +16,7 @@ from gis.exporter import export_features_to_shapefiles
 from ui.style import DARK_THEME_STYLESHEET
 from cad.converter import find_bundled_converter
 from ui.layer_tree_builder import LayerTreeBuilder
+from geocad.version import APP_NAME, VERSION
 
 logger = logging.getLogger("geocad.ui.main_window")
 
@@ -70,7 +71,7 @@ class AttributesDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GeoCad")
+        self.setWindowTitle(f"{APP_NAME} v{VERSION}")
         self.resize(1300, 800)
         self.setStyleSheet(DARK_THEME_STYLESHEET)
 

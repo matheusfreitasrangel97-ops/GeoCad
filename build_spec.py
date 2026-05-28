@@ -33,7 +33,7 @@ def run_build():
     # - --add-data: inclui a pasta 'bin/' (LibreDWG) no diretório de recursos internos do executável
     # - --clean: limpa o cache do compilador antes de iniciar
     args = [
-        'Solucoes_DWG.py',
+        'main.py',
         '--onefile',
         '--noconsole',
         '--add-data=bin/*;bin',

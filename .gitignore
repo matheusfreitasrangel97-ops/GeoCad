@@ -1,17 +1,94 @@
-# Python compilation artifacts
+# ==========================================
+# GeoCad Professional GitIgnore Configuration
+# ==========================================
+
+# --- Python ---
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 *.pyd
-
-# PyInstaller build and distribution
-build/
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.egg-info/
 dist/
-*.spec
+build/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg
+MANIFEST
 
-# Local application logs and settings
-logs/
-*.log
-.settings/
-.idea/
+# --- Virtual Environments ---
+.venv/
+venv/
+ENV/
+env/
+ActiveState.venv/
+
+# --- IDEs / Editors ---
 .vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+.project
+.pydevproject
+.settings/
+
+# --- Operating System ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Qt / PyQt ---
+*.qrc
+*.ui.py
+*.py.bak
+*.pyu
+
+# --- Logs ---
+logs/*.log
+*.log
+logs/
+
+# --- PyInstaller / Builds ---
+*.spec
+dist/
+build/
+releases/*
+!releases/.gitkeep
+
+# --- Temporary/Output CAD Files ---
+*temp_converted.dxf
+*.dxf
+!/bin/*.dxf
+temp_converted_*.dxf
+
+# --- LibreDWG/Local Temporary Files ---
+/updater/*
+!/updater/.gitkeep
+/tests/*
+!/tests/.gitkeep
+bin/__pycache__/
+dwg2dxf_temp/
+dwg2dxf.log
+libredwg_temp/
+
+# --- GeoCad Executable Outputs ---
+*.exe
+*.msi
+*.zip
+*.tar.gz

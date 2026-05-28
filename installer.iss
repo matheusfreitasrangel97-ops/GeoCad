@@ -5,7 +5,7 @@
 
 ; Informacoes do Aplicativo
 AppName=GeoCad
-AppVersion=1.0
+AppVersion=0.1.0
 AppPublisher=Matheus Freitas Rangel
 AppSupportURL=matheus-freitas-rangel@hotmail.com
 

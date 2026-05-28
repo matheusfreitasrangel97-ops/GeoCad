@@ -1,0 +1,12 @@
+# Dependências de Desenvolvimento - GeoCad
+# Instale usando: pip install -r requirements-dev.txt
+
+# Testes
+pytest>=7.4.0
+
+# Formatação e Linting
+black>=23.7.0
+flake8>=6.1.0
+
+# Compilação e Empacotamento
+pyinstaller>=6.1.0
