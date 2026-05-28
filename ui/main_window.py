@@ -1,12 +1,12 @@
 import os
 import logging
-from PyQt6.QtCore import Qt, QThread, QSettings, QSortFilterProxyModel
+from PyQt6.QtCore import Qt, QThread, QSettings, QSortFilterProxyModel, QTimer
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QFileDialog, QLabel, QLineEdit, QHeaderView, QMessageBox,
     QTreeView, QProgressBar, QTextEdit, QFrame, QSplitter,
     QToolButton, QCheckBox, QDialog, QSizePolicy,
-    QTableWidget, QTableWidgetItem
+    QTableWidget, QTableWidgetItem, QApplication
 )
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QTextCursor, QCursor
 
@@ -86,6 +86,9 @@ class MainWindow(QMainWindow):
 
         self.setup_ui()
         self.detect_bundled_converter()
+
+        # Agenda a verificação de atualizações automáticas após 3 segundos
+        QTimer.singleShot(3000, self.check_for_updates)
 
     def setup_ui(self):
         """Constrói a interface principal com QSplitter horizontal e painel recolhível."""
@@ -1097,3 +1100,33 @@ class MainWindow(QMainWindow):
             modifiers = QApplication.keyboardModifiers()
             additive = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
             self.preview_canvas.select_features([handle], additive=additive)
+
+    def check_for_updates(self):
+        """Dispara a checagem assíncrona por novas versões do GeoCad."""
+        from geocad.updater import UpdateCheckerWorker
+        from geocad.version import VERSION
+        
+        self.update_checker = UpdateCheckerWorker(VERSION)
+        self.update_checker.update_available.connect(self.on_update_available)
+        self.update_checker.start()
+
+    def on_update_available(self, remote_version, download_url, sha256_hash, notes):
+        """Exibe popup de aviso de atualização disponível e abre diálogo de progresso."""
+        msg = (
+            f"Uma nova versão do GeoCad (v{remote_version}) está disponível!\n\n"
+            f"Notas de lançamento:\n{notes}\n\n"
+            f"Deseja baixar e instalar esta nova versão de forma automática agora?"
+        )
+        
+        reply = QMessageBox.question(
+            self,
+            "Atualização Disponível",
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            from ui.update_dialog import UpdateProgressDialog
+            dialog = UpdateProgressDialog(download_url, sha256_hash, self)
+            dialog.exec()

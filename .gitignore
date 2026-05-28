@@ -89,6 +89,10 @@ libredwg_temp/
 
 # --- GeoCad Executable Outputs ---
 *.exe
+!updater.exe
 *.msi
 *.zip
 *.tar.gz
+
+# --- Backups ---
+backup/current/
