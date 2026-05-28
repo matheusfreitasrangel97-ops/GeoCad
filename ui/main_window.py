@@ -308,16 +308,25 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(btn_close_details)
         details_layout.addLayout(header_layout)
 
-        # Tabela de Atributos da Feição
-        self.details_table = QTableWidget()
-        self.details_table.setColumnCount(2)
-        self.details_table.setHorizontalHeaderLabels(["Atributo", "Valor"])
-        self.details_table.horizontalHeader().setStretchLastSection(True)
-        self.details_table.horizontalHeader().setVisible(False)  # Oculta cabeçalho
-        self.details_table.verticalHeader().setVisible(False)
-        self.details_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.details_table.setAlternatingRowColors(True)
-        details_layout.addWidget(self.details_table)
+        # Painel de Resumo Superior
+        self.details_summary_lbl = QLabel()
+        self.details_summary_lbl.setWordWrap(True)
+        self.details_summary_lbl.setStyleSheet(
+            "font-size: 11px; color: #475569; padding: 8px; background-color: #f8fafc; "
+            "border-radius: 4px; border: 1px solid #e2e8f0; line-height: 1.4;"
+        )
+        details_layout.addWidget(self.details_summary_lbl)
+
+        # Árvore de Atributos da Seleção (QTreeWidget)
+        from PyQt6.QtWidgets import QTreeWidget
+        self.details_tree = QTreeWidget()
+        self.details_tree.setHeaderHidden(True)
+        self.details_tree.setAlternatingRowColors(True)
+        self.details_tree.setStyleSheet(
+            "QTreeWidget { background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; color: #1f2937; }"
+            "QTreeWidget::item { padding: 4px; }"
+        )
+        details_layout.addWidget(self.details_tree)
 
         self.splitter.addWidget(self.details_sidebar)
 
@@ -424,77 +433,129 @@ class MainWindow(QMainWindow):
             self.details_sidebar.hide()
 
     def update_details_sidebar(self, selected_handles):
-        """Atualiza o painel lateral direito com os detalhes da feição selecionada."""
-        self.details_table.setRowCount(0)
+        """Atualiza o painel lateral direito com a visualização hierárquica e resumo das feições selecionadas."""
+        self.details_tree.clear()
         if not selected_handles:
+            self.details_summary_lbl.setText("Nenhuma feição selecionada")
             return
 
-        # Exibe os atributos da primeira feição do conjunto de selecionadas
-        handle = list(selected_handles)[0]
-        feat = self.preview_canvas._handle_to_feature.get(handle)
-        if not feat:
-            return
+        # Dicionário de tradução dos tipos geométricos
+        geom_name_map = {
+            "Point": "Pontos",
+            "LineString": "Linhas",
+            "Polygon": "Polígonos",
+            "Text": "Textos"
+        }
 
-        geom_type = feat.get("geom_type")
-        coords = feat.get("coords")
+        # Agrupa os handles selecionados por tipo geométrico
+        grouped_handles = {
+            "Point": [],
+            "LineString": [],
+            "Polygon": [],
+            "Text": []
+        }
 
-        length_val = "N/A"
-        area_val = "N/A"
-        coords_str = ""
+        valid_selected = []
+        for h in selected_handles:
+            reg = self.preview_canvas.feature_registry.get(h)
+            if reg:
+                geom_type = reg.get("entity_type") or reg.get("attributes", {}).get("geom_type")
+                if geom_type in grouped_handles:
+                    grouped_handles[geom_type].append(h)
+                    valid_selected.append(h)
 
-        try:
-            from gis.geometry_engine import GeometryFactory
-            geom = GeometryFactory.to_shapely(geom_type, coords)
-            if geom:
-                if geom_type == "LineString":
-                    length_val = f"{geom.length:.4f} m"
-                elif geom_type == "Polygon":
-                    area_val = f"{geom.area:.4f} m²"
-                    length_val = f"{geom.length:.4f} m"  # Perímetro
+        # Atualiza a contagem consolidada no painel de resumo superior
+        total_sel = len(valid_selected)
+        pts_count = len(grouped_handles["Point"])
+        lines_count = len(grouped_handles["LineString"])
+        polys_count = len(grouped_handles["Polygon"])
+        texts_count = len(grouped_handles["Text"])
+
+        summary_text = (
+            f"<b>Feições Selecionadas: {total_sel}</b><br>"
+            f"• Pontos: {pts_count}<br>"
+            f"• Linhas: {lines_count}<br>"
+            f"• Polígonos: {polys_count}"
+        )
+        if texts_count > 0:
+            summary_text += f"<br>• Textos: {texts_count}"
+        self.details_summary_lbl.setText(summary_text)
+
+        from PyQt6.QtWidgets import QTreeWidgetItem
+
+        # Constrói os nós de topo (tipo geométrico) e os filhos (feições e atributos)
+        for geom_key, geom_lbl in geom_name_map.items():
+            handles = grouped_handles[geom_key]
+            if not handles:
+                continue
+
+            # Ordena os handles de forma crescente
+            handles.sort()
+
+            # Cria o nó da categoria geométrica (ex: "LINHAS (5)")
+            parent_node = QTreeWidgetItem(self.details_tree)
+            parent_node.setText(0, f"{geom_lbl.upper()} ({len(handles)})")
+            
+            # Deixa a categoria expandida por padrão para o usuário ver
+            parent_node.setExpanded(True)
+
+            feat_lbl_map = {
+                "Point": "Ponto",
+                "LineString": "Linha",
+                "Polygon": "Polígono",
+                "Text": "Texto"
+            }
+            lbl_prefix = feat_lbl_map.get(geom_key, "Feição")
+
+            for h in handles:
+                reg = self.preview_canvas.feature_registry.get(h)
+                attrs = reg.get("attributes", {})
                 
-                # Coordenadas formatadas
-                if geom_type == "Point":
-                    coords_str = f"X: {geom.x:.4f}, Y: {geom.y:.4f}"
-                else:
-                    pts = list(geom.exterior.coords) if geom_type == "Polygon" else list(geom.coords)
-                    if len(pts) > 3:
-                        coords_str = ", ".join([f"({p[0]:.2f}, {p[1]:.2f})" for p in pts[:3]]) + "..."
+                # Cria o nó da feição individual (ex: "Linha #145")
+                feat_node = QTreeWidgetItem(parent_node)
+                feat_node.setText(0, f"{lbl_prefix} #{h}")
+
+                # Calcula dinamicamente as métricas espaciais (comprimento, área) da geometria shapely
+                geom = reg.get("geometry")
+                length_val = "N/A"
+                area_val = "N/A"
+                if geom and not geom.is_empty:
+                    if geom_key == "LineString":
+                        length_val = f"{geom.length:.4f} m"
+                    elif geom_key == "Polygon":
+                        area_val = f"{geom.area:.4f} m²"
+                        length_val = f"{geom.length:.4f} m"
+
+                espessura = attrs.get("lineweight", -1)
+                if isinstance(espessura, int):
+                    if espessura == -1:
+                        espessura_str = "PorCamada"
+                    elif espessura == -2:
+                        espessura_str = "PorBloco"
+                    elif espessura == -3:
+                        espessura_str = "Padrão"
                     else:
-                        coords_str = ", ".join([f"({p[0]:.2f}, {p[1]:.2f})" for p in pts])
-        except Exception as e:
-            logger.warning(f"Erro ao computar métricas espaciais do painel lateral: {e}")
-
-        attrs = [
-            ("Handle CAD", handle),
-            ("Camada", feat.get("layer")),
-            ("Tipo Geométrico", geom_type),
-            ("Tipo CAD (DXF)", feat.get("dxftype")),
-            ("Comprimento", length_val),
-            ("Área", area_val),
-            ("Coordenadas", coords_str),
-            ("Texto CAD", feat.get("texto", "N/A") if "texto" in feat else "N/A"),
-            ("Cor Original", feat.get("color")),
-            ("Linetype", feat.get("linetype", "BYLAYER")),
-            ("Espessura", feat.get("lineweight", -1))
-        ]
-
-        self.details_table.setRowCount(len(attrs))
-        for row, (name, val) in enumerate(attrs):
-            # Formata espessura em milímetros de forma amigável
-            if name == "Espessura" and isinstance(val, int):
-                if val == -1:
-                    val = "PorCamada"
-                elif val == -2:
-                    val = "PorBloco"
-                elif val == -3:
-                    val = "Padrão"
+                        espessura_str = f"{espessura/100:.2f} mm"
                 else:
-                    val = f"{val/100:.2f} mm"
+                    espessura_str = str(espessura)
 
-            self.details_table.setItem(row, 0, QTableWidgetItem(str(name)))
-            self.details_table.setItem(row, 1, QTableWidgetItem(str(val) if val is not None else "N/A"))
+                # Cria os nós de atributos recolhidos sob a feição
+                QTreeWidgetItem(feat_node).setText(0, f"Handle: {h}")
+                QTreeWidgetItem(feat_node).setText(0, f"Layer: {attrs.get('layer', '0')}")
+                
+                if geom_key == "LineString":
+                    QTreeWidgetItem(feat_node).setText(0, f"Comprimento: {length_val}")
+                elif geom_key == "Polygon":
+                    QTreeWidgetItem(feat_node).setText(0, f"Área: {area_val}")
+                    QTreeWidgetItem(feat_node).setText(0, f"Perímetro: {length_val}")
 
-        self.details_table.resizeColumnsToContents()
+                QTreeWidgetItem(feat_node).setText(0, f"Cor CAD: {attrs.get('color', '#ffffff')}")
+                QTreeWidgetItem(feat_node).setText(0, f"Tipo Linha: {attrs.get('linetype', 'BYLAYER')}")
+                QTreeWidgetItem(feat_node).setText(0, f"Espessura: {espessura_str}")
+
+                texto_val = attrs.get("texto", "")
+                if geom_key == "Text" and texto_val:
+                    QTreeWidgetItem(feat_node).setText(0, f"Texto CAD: {texto_val}")
 
     def show_selection_attributes(self):
         """Abre a janela com os atributos das feições atualmente selecionadas."""

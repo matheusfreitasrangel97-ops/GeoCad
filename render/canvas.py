@@ -474,6 +474,18 @@ class CADPreviewCanvas(QGraphicsView):
             for (chunk_id, g_type, color), item in self.layers_items[layer_name]["geometry"].items():
                 if g_type == geom_type:
                     item.setVisible(is_visible)
+
+        # Se deixar de estar visível, remove feições da seleção
+        if not is_visible:
+            handles_to_remove = []
+            for handle in list(self.state.selected_handles):
+                feat = self._handle_to_feature.get(handle)
+                if feat and feat.get("layer") == layer_name and feat.get("geom_type") == geom_type:
+                    handles_to_remove.append(handle)
+            if handles_to_remove:
+                self.state.selected_handles.difference_update(handles_to_remove)
+                self.selection_changed.emit(self.state.selected_handles)
+
         self._update_selection_overlay()
 
     def toggle_layer_labels(self, layer_name, is_visible):

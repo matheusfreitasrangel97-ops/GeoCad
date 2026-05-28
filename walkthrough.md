@@ -64,6 +64,10 @@ workspace/
    * Adicionamos a assinatura do criador no rodapé da barra lateral: `"Criado por Matheus Freitas Rangel Contato (51)997903841"`, perfeitamente alinhada e integrada ao layout.
 9. **Sweep Completo para Português Brasileiro (pt-BR)**:
    * Varremos todos os arquivos da aplicação (`Solucoes_DWG.py`, `render/canvas.py`, `ui/main_window.py`, etc.) traduzindo todos os comentários de desenvolvimento, anotações de código e documentações (`docstrings`) remanescentes em inglês para o Português do Brasil de forma definitiva.
+10. **Painel de Inspeção Multi-Feição e Sincronização de Visibilidade**:
+    * Substituímos o painel lateral de exibição individual simples por um **QTreeWidget** que agrupa todas as feições selecionadas simultaneamente por tipo geométrico (`PONTOS`, `LINHAS`, `POLÍGONOS` e `TEXTOS`). Cada feição sob o tipo exibe seus atributos (Handle, Layer, Comprimento, Área, Cor, Tipo de Linha e Espessura) de forma recolhida e expandível para evitar poluição visual.
+    * Adicionamos no topo do painel um resumo consolidado das feições selecionadas.
+    * Implementamos uma regra de consistência na visibilidade: se o usuário desmarcar a checkbox de uma camada ou tipo de geometria na árvore lateral, qualquer feição selecionada correspondente a essa camada e tipo é desmarcada do canvas e removida do painel de inspeção automaticamente.
 
 ---
 
