@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import logging
 
-logger = logging.getLogger("geocad_bridge.cad.converter")
+logger = logging.getLogger("geocad.cad.converter")
 
 def find_bundled_converter():
     """

@@ -4,7 +4,7 @@ import ezdxf
 from ezdxf import path
 from ezdxf.colors import aci2rgb
 
-logger = logging.getLogger("geocad_bridge.cad.parser")
+logger = logging.getLogger("geocad.cad.parser")
 
 # Monkeypatch ezdxf SortEntsTable.load_table para evitar DXFStructureError em arquivos corrompidos
 try:
