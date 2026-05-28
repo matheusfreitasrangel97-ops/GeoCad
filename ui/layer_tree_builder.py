@@ -1,115 +1,94 @@
-import re
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QStandardItem
 
 class LayerTreeBuilder:
     """
-    Construtor e organizador da hierarquia lógica virtual de camadas CAD no QStandardItemModel.
-    Converte uma lista plana de camadas do CAD em uma árvore agrupada por prefixos e separadores comuns.
+    Construtor e organizador da hierarquia de camadas CAD no QStandardItemModel.
+    Organiza as camadas na estrutura profissional: Tipo Geométrico -> Camada -> Feições.
     """
 
     @staticmethod
     def build_tree(tree_model, layers_data):
         """
-        Popula o QStandardItemModel com a árvore hierárquica das camadas.
+        Popula o QStandardItemModel com a árvore hierárquica das camadas por tipo geométrico.
         layers_data: lista de tuplas (layer_name, geom_type, count)
         """
         # Limpa o modelo e redefine os cabeçalhos
         tree_model.clear()
         tree_model.setHorizontalHeaderLabels(["Camada", "Tipo", "Feições"])
 
-        # Ordena as camadas alfabeticamente
+        # Mapeamento de tipos geométricos para nomes amigáveis em português
+        geom_name_map = {
+            "Point": "Pontos",
+            "LineString": "Linhas",
+            "Polygon": "Polígonos",
+            "Text": "Textos"
+        }
+
+        # Cria os 4 nós raiz estáticos e os adiciona ao modelo
+        roots = {}
+        for key, name in geom_name_map.items():
+            root_item = QStandardItem(f"📁 {name}")
+            root_item.setCheckable(True)
+            root_item.setCheckState(Qt.CheckState.Checked)
+            root_item.setEditable(False)
+
+            type_item = QStandardItem("")
+            type_item.setEditable(False)
+
+            count_item = QStandardItem("0")
+            count_item.setEditable(False)
+
+            tree_model.appendRow([root_item, type_item, count_item])
+            roots[key] = root_item
+
+        # Ordena as camadas alfabeticamente pelo nome da camada
         sorted_layers = sorted(layers_data, key=lambda x: x[0].upper())
 
-        # Mapeia caminho (tupla de partes) -> QStandardItem da coluna 0
-        nodes = {}
+        for layer_name, geom_type, count in sorted_layers:
+            root_node = roots.get(geom_type)
+            if not root_node:
+                continue
 
-        # Expressão regular para encontrar os separadores: _ - . :
-        split_pattern = re.compile(r"[_.:-]")
+            # Nó da camada CAD real
+            layer_item = QStandardItem(layer_name)
+            layer_item.setCheckable(True)
+            layer_item.setCheckState(Qt.CheckState.Checked)
+            # Armazena a tupla (layer_name, geom_type) para identificação única no Lazy Loading e visibilidade
+            layer_item.setData((layer_name, geom_type), Qt.ItemDataRole.UserRole)
+            layer_item.setEditable(False)
 
-        for full_name, geom_type, count in sorted_layers:
-            # Divide o nome da camada e remove partes vazias
-            parts = [p for p in split_pattern.split(full_name) if p.strip()]
-            if not parts:
-                parts = [full_name]
+            type_lbl = geom_name_map.get(geom_type, geom_type)
+            type_item = QStandardItem(type_lbl)
+            type_item.setEditable(False)
 
-            # Constrói cada nível da hierarquia
-            for i in range(1, len(parts) + 1):
-                path = tuple(parts[:i])
-                if path not in nodes:
-                    is_leaf = (i == len(parts))
+            count_item = QStandardItem(f"{count:,}".replace(",", "."))
+            count_item.setEditable(False)
 
-                    if is_leaf:
-                        # Nó folha (representa a camada CAD real)
-                        row_item = QStandardItem(parts[-1])
-                        row_item.setCheckable(True)
-                        row_item.setCheckState(Qt.CheckState.Unchecked)
-                        row_item.setData(full_name, Qt.ItemDataRole.UserRole)
-                        row_item.setEditable(False)
+            # Cria um nó dummy "Carregando..." para possibilitar a expansão do nó da camada
+            dummy_item = QStandardItem("Carregando...")
+            dummy_item.setEditable(False)
+            layer_item.appendRow([dummy_item])
 
-                        type_item = QStandardItem(geom_type)
-                        type_item.setEditable(False)
+            root_node.appendRow([layer_item, type_item, count_item])
 
-                        count_item = QStandardItem(f"{count:,}".replace(",", "."))
-                        count_item.setEditable(False)
-                    else:
-                        # Nó grupo (agrupador virtual intermediário)
-                        row_item = QStandardItem(parts[i - 1])
-                        row_item.setCheckable(True)
-                        row_item.setCheckState(Qt.CheckState.Unchecked)
-                        row_item.setEditable(False)
-
-                        type_item = QStandardItem("")
-                        type_item.setEditable(False)
-
-                        count_item = QStandardItem("0")
-                        count_item.setEditable(False)
-
-                    # Anexa ao pai correto
-                    if i == 1:
-                        tree_model.appendRow([row_item, type_item, count_item])
-                    else:
-                        parent_path = tuple(parts[:i - 1])
-                        parent_node = nodes[parent_path]
-                        parent_node.appendRow([row_item, type_item, count_item])
-
-                    nodes[path] = row_item
-
-        # Atualiza a contagem acumulada das feições para os grupos recursivamente
-        def update_totals(item):
-            if not item.hasChildren():
-                # Se for folha, retorna o seu valor inteiro de feições
-                try:
-                    parent_item = item.parent()
-                    if parent_item:
-                        count_item = parent_item.child(item.row(), 2)
-                    else:
-                        count_item = tree_model.item(item.row(), 2)
-                    val_str = count_item.text().replace(".", "")
-                    return int(val_str)
-                except Exception:
-                    return 0
-
+        # Atualiza a contagem consolidada das feições para os grupos raiz
+        for key, root_node in roots.items():
             total = 0
-            child_count = item.rowCount()
-            for r in range(child_count):
-                child_col0 = item.child(r, 0)
-                total += update_totals(child_col0)
+            for r in range(root_node.rowCount()):
+                child_col0 = root_node.child(r, 0)
+                if child_col0:
+                    try:
+                        # Busca o valor correspondente na coluna 2 (Feições) daquela linha
+                        val_item = root_node.child(r, 2)
+                        if val_item:
+                            val_str = val_item.text().replace(".", "")
+                            total += int(val_str)
+                    except Exception:
+                        pass
 
-            # Atualiza o rótulo de feições do próprio grupo
-            parent_item = item.parent()
-            if parent_item:
-                count_item = parent_item.child(item.row(), 2)
-            else:
-                count_item = tree_model.item(item.row(), 2)
-
-            if count_item:
-                count_item.setText(f"{total:,}".replace(",", "."))
-
-            return total
-
-        # Roda a atualização para todos os nós de topo (raiz)
-        for r in range(tree_model.rowCount()):
-            root_item = tree_model.item(r, 0)
-            if root_item:
-                update_totals(root_item)
+            # Atualiza o rótulo de feições do próprio grupo de topo
+            root_row = root_node.row()
+            root_count_item = tree_model.item(root_row, 2)
+            if root_count_item:
+                root_count_item.setText(f"{total:,}".replace(",", "."))

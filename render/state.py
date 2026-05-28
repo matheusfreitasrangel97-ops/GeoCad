@@ -43,16 +43,16 @@ class RenderState:
 
     # ──── Camadas Geométricas ────
 
-    def is_layer_visible(self, name):
-        """Verifica se uma camada geométrica está visível."""
-        return name in self.visible_layers
+    def is_layer_geom_visible(self, name, geom_type):
+        """Verifica se uma combinação de camada e tipo geométrico está visível."""
+        return (name, geom_type) in self.visible_layers
 
-    def set_layer_visible(self, name, visible):
-        """Define a visibilidade de uma camada geométrica."""
+    def set_layer_geom_visible(self, name, geom_type, visible):
+        """Define a visibilidade de uma combinação de camada e tipo geométrico."""
         if visible:
-            self.visible_layers.add(name)
+            self.visible_layers.add((name, geom_type))
         else:
-            self.visible_layers.discard(name)
+            self.visible_layers.discard((name, geom_type))
 
     # ──── Rótulos (Labels) ────
 

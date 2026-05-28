@@ -1,5 +1,5 @@
 """
-Configuração do sistema de logging do GeoCAD Bridge.
+Configuração do sistema de logging do GeoCad.
 
 Responsabilidades:
     - Configura handlers de console e arquivo rotativo
@@ -19,7 +19,7 @@ def setup_logging():
     """
     log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "geocad_bridge.log")
+    log_file = os.path.join(log_dir, "geocad.log")
 
     # Limpa handlers existentes para evitar duplicação de logs
     root_logger = logging.getLogger()
@@ -47,6 +47,6 @@ def setup_logging():
     root_logger.addHandler(file_handler)
 
     # Ativa nível DEBUG para loggers específicos do projeto
-    logging.getLogger("geocad_bridge").setLevel(logging.DEBUG)
+    logging.getLogger("geocad").setLevel(logging.DEBUG)
 
     logging.info(f"Sistema de logging inicializado. Arquivo de log: {log_file}")

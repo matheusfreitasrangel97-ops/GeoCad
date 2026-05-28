@@ -4,11 +4,11 @@ import subprocess
 
 def run_build():
     """
-    Executa o empacotamento do GeoCAD Bridge com PyInstaller.
+    Executa o empacotamento do GeoCad com PyInstaller.
     Compila o projeto em um único arquivo executável standalone (.exe)
     incluindo todas as dependências internas e utilitários do LibreDWG.
     """
-    print("Iniciando build do GeoCAD Bridge...")
+    print("Iniciando build do GeoCad...")
     
     # Valida presença dos binários do LibreDWG
     workspace_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +37,7 @@ def run_build():
         '--onefile',
         '--noconsole',
         '--add-data=bin/*;bin',
-        '--name=GeoCAD_Bridge',
+        '--name=GeoCad',
         '--clean'
     ]
 

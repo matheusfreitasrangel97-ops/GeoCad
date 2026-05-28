@@ -5,7 +5,7 @@ import geopandas as gpd
 from collections import defaultdict
 from gis.geometry_engine import GeometryFactory
 
-logger = logging.getLogger("geocad_bridge.gis.exporter")
+logger = logging.getLogger("geocad.gis.exporter")
 
 def clean_existing_shapefile(base_path):
     """
@@ -106,12 +106,23 @@ def export_features_to_shapefiles(features, output_directory, crs_code=None):
             
             gdf = gpd.GeoDataFrame(data, geometry=geometries, crs=crs_code)
             
+            # Define a subpasta com base no tipo geométrico
+            subfolder_map = {
+                "Point": "pontos",
+                "LineString": "linhas",
+                "Polygon": "poligonos",
+                "Text": "textos"
+            }
+            geom_subfolder = subfolder_map.get(geom_type, "outros")
+            target_subfolder = os.path.join(dwg_shp_dir, geom_subfolder)
+            os.makedirs(target_subfolder, exist_ok=True)
+
             # Nome do shapefile limpo e em minúsculas
             clean_name = re_sub_special_chars(layer_name).lower()
-            filename = f"{clean_name}{suffix_map[geom_type]}"
-            shapefile_path = os.path.join(dwg_shp_dir, filename)
-            
-            logger.info(f"Gravando Shapefile '{filename}' com {len(gdf)} feições...")
+            filename = f"{clean_name}.shp"
+            shapefile_path = os.path.join(target_subfolder, filename)
+
+            logger.info(f"Gravando Shapefile '{geom_subfolder}/{filename}' com {len(gdf)} feições...")
             
             # Limpa arquivos residuais antigos do mesmo Shapefile antes de gravar
             clean_existing_shapefile(shapefile_path)

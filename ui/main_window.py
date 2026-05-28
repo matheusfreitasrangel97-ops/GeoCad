@@ -70,11 +70,11 @@ class AttributesDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GeoCAD — Conversor CAD→Shapefile")
+        self.setWindowTitle("GeoCad")
         self.resize(1300, 800)
         self.setStyleSheet(DARK_THEME_STYLESHEET)
 
-        self.settings = QSettings("GeoCAD — Conversor CAD→Shapefile")
+        self.settings = QSettings("GeoCad")
 
         # Estado Interno
         self.thread = None
@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setSpacing(12)
 
         # Título do Aplicativo
-        title_lbl = QLabel("GeoCAD")
+        title_lbl = QLabel("GeoCad")
         title_lbl.setObjectName("title_label")
         desc_lbl = QLabel("Conversão DWG → Shapefile GIS")
         desc_lbl.setStyleSheet("color: #4b5563; font-size: 11px; margin-bottom: 5px;")
@@ -153,6 +153,8 @@ class MainWindow(QMainWindow):
         self.tree_model = QStandardItemModel()
         self.tree_model.setHorizontalHeaderLabels(["Camada", "Tipo", "Feições"])
         self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
+        self.tree_view.expanded.connect(self.on_tree_node_expanded)
+        self.tree_view.clicked.connect(self.on_tree_node_clicked)
 
         # Habilita menu de contexto de clique direito nas camadas
         self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -512,6 +514,9 @@ class MainWindow(QMainWindow):
 
     def add_layers_batch(self, layers_data):
         """Constrói a árvore visual das camadas em lote."""
+        # Registra tudo como visível por padrão no RenderState do canvas
+        for layer_name, geom_type, count in layers_data:
+            self.preview_canvas.state.set_layer_geom_visible(layer_name, geom_type, True)
         LayerTreeBuilder.build_tree(self.tree_model, layers_data)
 
     # ──────────────────────────────────────────────
@@ -673,10 +678,12 @@ class MainWindow(QMainWindow):
                         if child:
                             child.setCheckState(state)
                             propagate_down(child, state)
-                else:
-                    layer_name = node.data(Qt.ItemDataRole.UserRole)
-                    if layer_name:
-                        self.preview_canvas.toggle_layer_visibility(layer_name, state == Qt.CheckState.Checked)
+                
+                # Altera o estado do próprio nó se for folha (camada CAD real)
+                data = node.data(Qt.ItemDataRole.UserRole)
+                if data and isinstance(data, tuple) and len(data) == 2:
+                    layer_name, geom_type = data
+                    self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, state == Qt.CheckState.Checked)
 
             # Sincroniza os estados para cima (nós pais)
             def propagate_up(node):
@@ -704,12 +711,7 @@ class MainWindow(QMainWindow):
                 propagate_up(parent)
 
             state = item.checkState()
-            if item.hasChildren():
-                propagate_down(item, state)
-            else:
-                layer_name = item.data(Qt.ItemDataRole.UserRole)
-                if layer_name:
-                    self.preview_canvas.toggle_layer_visibility(layer_name, state == Qt.CheckState.Checked)
+            propagate_down(item, state)
             propagate_up(item)
         finally:
             self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
@@ -733,10 +735,11 @@ class MainWindow(QMainWindow):
                         child = item.child(r, 0)
                         if child:
                             apply_state(child)
-                else:
-                    layer_name = item.data(Qt.ItemDataRole.UserRole)
-                    if layer_name:
-                        self.preview_canvas.toggle_layer_visibility(layer_name, state == Qt.CheckState.Checked)
+                
+                data = item.data(Qt.ItemDataRole.UserRole)
+                if data and isinstance(data, tuple) and len(data) == 2:
+                    layer_name, geom_type = data
+                    self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, state == Qt.CheckState.Checked)
 
             for r in range(self.tree_model.rowCount()):
                 root_item = self.tree_model.item(r, 0)
@@ -750,7 +753,7 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────
 
     def show_layer_context_menu(self, position):
-        """Exibe menu de contexto avançado com opções de zoom e labels."""
+        """Exibe o menu de contexto simplificado e profissional na camada."""
         index = self.tree_view.indexAt(position)
         if not index.isValid():
             return
@@ -760,79 +763,48 @@ class MainWindow(QMainWindow):
         if not item:
             return
 
+        # Verifica se o item possui UserRole com tupla (layer_name, geom_type)
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data or not isinstance(data, tuple) or len(data) != 2:
+            return
+
+        layer_name, geom_type = data
+
         from PyQt6.QtGui import QAction
         from PyQt6.QtWidgets import QMenu
 
         menu = QMenu(self)
 
-        if item.hasChildren():
-            # Menu para nós de grupo
-            zoom_group_action = QAction("🔍 Direcionar Zoom para o Grupo", self)
-            zoom_group_action.triggered.connect(lambda: self.zoom_to_group(item))
-            menu.addAction(zoom_group_action)
+        # 🔍 Zoom para layer
+        zoom_action = QAction("🔍 Zoom para layer", self)
+        zoom_action.triggered.connect(lambda: self.zoom_to_layer(layer_name))
+        menu.addAction(zoom_action)
 
-            menu.addSeparator()
+        menu.addSeparator()
 
-            label_on_action = QAction("🏷️ Ligar labels da layer (Grupo)", self)
-            label_on_action.triggered.connect(lambda: self._toggle_folder_labels(item, True))
-            menu.addAction(label_on_action)
+        # 👁️ Mostrar layer (marca checkbox)
+        show_action = QAction("👁️ Mostrar layer", self)
+        show_action.triggered.connect(lambda: item.setCheckState(Qt.CheckState.Checked))
+        menu.addAction(show_action)
 
-            label_off_action = QAction("🚫 Desligar labels da layer (Grupo)", self)
-            label_off_action.triggered.connect(lambda: self._toggle_folder_labels(item, False))
-            menu.addAction(label_off_action)
+        # 🚫 Ocultar layer (desmarca checkbox)
+        hide_action = QAction("🚫 Ocultar layer", self)
+        hide_action.triggered.connect(lambda: item.setCheckState(Qt.CheckState.Unchecked))
+        menu.addAction(hide_action)
 
-            menu.addSeparator()
+        menu.addSeparator()
 
-            all_labels_on = QAction("🏷️ Ligar labels globais", self)
-            all_labels_on.triggered.connect(lambda: self.preview_canvas.toggle_all_labels(True))
-            menu.addAction(all_labels_on)
+        # 🏷️ Ligar labels
+        label_on_action = QAction("🏷️ Ligar labels", self)
+        label_on_action.triggered.connect(lambda: self.preview_canvas.toggle_layer_labels(layer_name, True))
+        menu.addAction(label_on_action)
 
-            all_labels_off = QAction("🚫 Desligar labels globais", self)
-            all_labels_off.triggered.connect(lambda: self.preview_canvas.toggle_all_labels(False))
-            menu.addAction(all_labels_off)
-        else:
-            # Menu para camadas folha
-            layer_name = item.data(Qt.ItemDataRole.UserRole) or item.text()
-
-            zoom_action = QAction("🔍 Direcionar Zoom para a Camada", self)
-            zoom_action.triggered.connect(lambda: self.zoom_to_layer(layer_name))
-            menu.addAction(zoom_action)
-
-            menu.addSeparator()
-
-            label_on_action = QAction("🏷️ Ligar labels da layer", self)
-            label_on_action.triggered.connect(lambda: self.preview_canvas.toggle_layer_labels(layer_name, True))
-            menu.addAction(label_on_action)
-
-            label_off_action = QAction("🚫 Desligar labels da layer", self)
-            label_off_action.triggered.connect(lambda: self.preview_canvas.toggle_layer_labels(layer_name, False))
-            menu.addAction(label_off_action)
-
-            menu.addSeparator()
-
-            all_labels_on = QAction("🏷️ Ligar labels globais", self)
-            all_labels_on.triggered.connect(lambda: self.preview_canvas.toggle_all_labels(True))
-            menu.addAction(all_labels_on)
-
-            all_labels_off = QAction("🚫 Desligar labels globais", self)
-            all_labels_off.triggered.connect(lambda: self.preview_canvas.toggle_all_labels(False))
-            menu.addAction(all_labels_off)
+        # 🚫 Desligar labels
+        label_off_action = QAction("🚫 Desligar labels", self)
+        label_off_action.triggered.connect(lambda: self.preview_canvas.toggle_layer_labels(layer_name, False))
+        menu.addAction(label_off_action)
 
         menu.exec(self.tree_view.viewport().mapToGlobal(position))
-
-    def _toggle_folder_labels(self, folder_item, is_visible):
-        """Liga ou desliga rótulos de todas as camadas filhas de uma pasta recursivamente."""
-        def toggle_recursive(node):
-            if node.hasChildren():
-                for r in range(node.rowCount()):
-                    child = node.child(r, 0)
-                    if child:
-                        toggle_recursive(child)
-            else:
-                layer_name = node.data(Qt.ItemDataRole.UserRole)
-                if layer_name:
-                    self.preview_canvas.toggle_layer_labels(layer_name, is_visible)
-        toggle_recursive(folder_item)
 
     def zoom_to_group(self, group_item):
         """Ajusta o zoom para cobrir todas as camadas filhas de um grupo."""
@@ -917,25 +889,26 @@ class MainWindow(QMainWindow):
             features_to_export = [f for f in self.all_parsed_features if f.get("handle") in selected_handles]
         else:
             # Filtra recursivamente para coletar as camadas marcadas (checadas) na árvore
-            selected_layers = set()
+            selected_layer_geoms = set()
             def collect_checked_leaves(node):
                 if node.hasChildren():
                     for r in range(node.rowCount()):
                         child = node.child(r, 0)
                         if child:
                             collect_checked_leaves(child)
-                else:
+                
+                # Se for folha ou nó camada que possui o UserRole
+                data = node.data(Qt.ItemDataRole.UserRole)
+                if data and isinstance(data, tuple) and len(data) == 2:
                     if node.checkState() == Qt.CheckState.Checked:
-                        layer_name = node.data(Qt.ItemDataRole.UserRole)
-                        if layer_name:
-                            selected_layers.add(layer_name)
+                        selected_layer_geoms.add(data)
 
             for r in range(self.tree_model.rowCount()):
                 root_item = self.tree_model.item(r, 0)
                 if root_item:
                     collect_checked_leaves(root_item)
 
-            features_to_export = [f for f in self.all_parsed_features if f.get("layer") in selected_layers]
+            features_to_export = [f for f in self.all_parsed_features if (f.get("layer"), f.get("geom_type")) in selected_layer_geoms]
 
         if not features_to_export:
             if export_only_selected:
@@ -1013,3 +986,52 @@ class MainWindow(QMainWindow):
             self.thread.quit()
             self.thread.wait()
         event.accept()
+
+    def on_tree_node_expanded(self, index):
+        """Carrega as feições individuais sob demanda quando a camada é expandida (Lazy Loading)."""
+        source_index = self.proxy_model.mapToSource(index)
+        item = self.tree_model.itemFromIndex(source_index)
+        if not item:
+            return
+
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data or not isinstance(data, tuple) or len(data) != 2:
+            return
+
+        layer_name, geom_type = data
+
+        # Verifica se o nó possui o filho dummy "Carregando..." e o substitui pelas feições reais
+        if item.rowCount() == 1 and item.child(0, 0).text() == "Carregando...":
+            item.removeRow(0)
+
+            feats = [f for f in self.all_parsed_features if f.get("layer") == layer_name and f.get("geom_type") == geom_type]
+
+            geom_lbl_map = {
+                "Point": "Ponto",
+                "LineString": "Linha",
+                "Polygon": "Polígono",
+                "Text": "Texto"
+            }
+            lbl = geom_lbl_map.get(geom_type, "Feição")
+
+            for f in feats:
+                handle = f.get("handle")
+                feat_item = QStandardItem(f"{lbl} #{handle}")
+                feat_item.setCheckable(False)
+                feat_item.setEditable(False)
+                feat_item.setData(handle, Qt.ItemDataRole.UserRole)
+                item.appendRow([feat_item])
+
+    def on_tree_node_clicked(self, index):
+        """Sincroniza o clique na feição da árvore para selecioná-la no canvas."""
+        source_index = self.proxy_model.mapToSource(index)
+        item = self.tree_model.itemFromIndex(source_index)
+        if not item:
+            return
+
+        handle = item.data(Qt.ItemDataRole.UserRole)
+        # Se for um inteiro (handle), seleciona
+        if handle and isinstance(handle, int):
+            modifiers = QApplication.keyboardModifiers()
+            additive = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+            self.preview_canvas.select_features([handle], additive=additive)

@@ -1,6 +1,6 @@
 @echo off
 echo =======================================================
-echo Compilador GeoCAD Bridge (Distribuicao Standalone)
+echo Compilador GeoCad (Distribuicao Standalone)
 echo =======================================================
 echo.
 
@@ -11,15 +11,15 @@ echo.
 
 echo [2/3] Iniciando empacotamento com PyInstaller...
 echo Isso pode levar alguns minutos. Aguarde...
-call "C:\Program Files\QGIS 4.0.1\bin\python-qgis.bat" -m PyInstaller --noconfirm --onedir --windowed --name "GeoCAD_Bridge" --add-binary "bin/dwg2dxf.exe;bin" Solucoes_DWG.py
+call "C:\Program Files\QGIS 4.0.1\bin\python-qgis.bat" -m PyInstaller --noconfirm --onedir --windowed --name "GeoCad" --add-binary "bin/dwg2dxf.exe;bin" Solucoes_DWG.py
 echo.
 
 echo [3/3] Processo finalizado!
 echo =======================================================
 echo O seu aplicativo pronto para uso esta localizado na pasta:
-echo %CD%\dist\GeoCAD_Bridge
+echo %CD%\dist\GeoCad
 echo.
 echo Para abrir o programa, basta entrar nessa pasta e dar um
-echo clique duplo no arquivo GeoCAD_Bridge.exe
+echo clique duplo no arquivo GeoCad.exe
 echo =======================================================
 pause

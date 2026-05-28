@@ -1,6 +1,6 @@
-# GeoCAD Bridge Standalone — Relatório de Entrega & Manual Técnico
+# GeoCad Standalone — Relatório de Entrega & Manual Técnico
 
-Este documento resume a evolução e reestruturação do **GeoCAD Bridge** para um ambiente autônomo, resiliente a falhas e de alta produtividade para usuários de GIS. O software agora roda fora do runtime do QGIS, utiliza o LibreDWG e processa arquivos CAD corrompidos ou estruturalmente inconsistentes sem interromper o fluxo de trabalho do usuário.
+Este documento resume a evolução e reestruturação do **GeoCad** para um ambiente autônomo, resiliente a falhas e de alta produtividade para usuários de GIS. O software agora roda fora do runtime do QGIS, utiliza o LibreDWG e processa arquivos CAD corrompidos ou estruturalmente inconsistentes sem interromper o fluxo de trabalho do usuário.
 
 Adicionalmente, esta versão inclui as correções de visualização, seleção e exportação de camadas, a tradução total de comentários para Português Brasileiro (pt-BR), a inclusão de créditos e a reformulação completa do estilo visual para um tema híbrido claro/slate de alta legibilidade.
 
@@ -98,13 +98,13 @@ python build_spec.py
 ```
 
 ### Passo 3: Executável Gerado
-Após o término, o executável final **`GeoCAD_Bridge.exe`** estará disponível na pasta **`dist/`** na raiz do projeto.
+Após o término, o executável final **`GeoCad.exe`** estará disponível na pasta **`dist/`** na raiz do projeto.
 
 ---
 
 ## 🎓 6. Guia Didático de Customização de Design e UI em PyQt6
 
-Para que você possa evoluir e ajustar a interface do GeoCAD Bridge por conta própria, reunimos aqui os principais conceitos e exemplos práticos de como a UI é estruturada neste projeto.
+Para que você possa evoluir e ajustar a interface do GeoCad por conta própria, reunimos aqui os principais conceitos e exemplos práticos de como a UI é estruturada neste projeto.
 
 ### 6.1 Como Funcionam os Layouts (Estrutura Física)
 No PyQt, os elementos visuais (botões, campos de texto, tabelas) são posicionados utilizando layouts gerenciadores de espaço. Os mais comuns são:
@@ -195,8 +195,8 @@ Para criar um menu flutuante quando o usuário clica com o botão direito sobre 
        # Cria o menu de pop-up flutuante
        menu = QMenu(self)
        
-       # Cria uma ação do menu com seu ícone/texto e conecta sua resposta
-       zoom_action = QAction("🔍 Direcionar Zoom para a Camada", self)
+       # Cria uma ação do menu com seu texto e conecta sua resposta
+       zoom_action = QAction("🔍 Zoom para layer", self)
        zoom_action.triggered.connect(lambda: self.zoom_to_layer(layer_name))
        menu.addAction(zoom_action)
        

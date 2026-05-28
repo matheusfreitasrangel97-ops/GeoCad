@@ -22,7 +22,7 @@ from PyQt6.QtGui import (
 
 from render.state import RenderState
 
-logger = logging.getLogger("geocad_bridge.render.canvas")
+logger = logging.getLogger("geocad.render.canvas")
 
 
 # ═══════════════════════════════════════════════════════
@@ -243,6 +243,17 @@ class CADPreviewCanvas(QGraphicsView):
         self._rubber_band = None
         self._rubber_origin = None
 
+        # Variáveis para controle do pan com botão central do mouse
+        self._middle_pan_active = False
+        self._middle_pan_start = None
+        self._saved_drag_mode = None
+        self._saved_cursor = None
+
+        # Variáveis para controle da seleção cíclica (cycling selection)
+        self._last_click_pos = None
+        self._cycling_candidates = []
+        self._cycling_index = 0
+
     # ──────────────────────────────────────────────
     # Controle da Cena
     # ──────────────────────────────────────────────
@@ -262,26 +273,35 @@ class CADPreviewCanvas(QGraphicsView):
 
     def _init_groups(self):
         """Cria os grupos de renderização separados na cena para geometria e labels."""
-        self.geometry_group = QGraphicsRectItem()
-        self.geometry_group.setPen(QPen(Qt.PenStyle.NoPen))
-        self.geometry_group.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        self.scene.addItem(self.geometry_group)
+        self.geometry_groups = {
+            "Point": QGraphicsRectItem(),
+            "LineString": QGraphicsRectItem(),
+            "Polygon": QGraphicsRectItem(),
+            "Text": QGraphicsRectItem()
+        }
+        for g_item in self.geometry_groups.values():
+            g_item.setPen(QPen(Qt.PenStyle.NoPen))
+            g_item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            self.scene.addItem(g_item)
 
-        self.label_group = QGraphicsRectItem()
-        self.label_group.setPen(QPen(Qt.PenStyle.NoPen))
-        self.label_group.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        self.label_group.setZValue(500)  # Garante que labels fiquem sempre acima de tudo
-        self.scene.addItem(self.label_group)
+        self.label_groups = {
+            "Text": QGraphicsRectItem()
+        }
+        for l_item in self.label_groups.values():
+            l_item.setPen(QPen(Qt.PenStyle.NoPen))
+            l_item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            l_item.setZValue(500)  # Garante que labels fiquem sempre acima de tudo
+            self.scene.addItem(l_item)
 
     def _init_selection_overlay(self):
         """Cria e configura o QGraphicsPathItem para o destaque de seleção exclusivo."""
-        self._selection_overlay = QGraphicsPathItem()
+        self.selection_overlay_group = QGraphicsPathItem()
         highlight_pen = QPen(QColor("#fbbf24"), 3.0, Qt.PenStyle.SolidLine)
         highlight_pen.setCosmetic(True)
-        self._selection_overlay.setPen(highlight_pen)
-        self._selection_overlay.setBrush(QBrush(QColor(251, 191, 36, 120)))
-        self._selection_overlay.setZValue(1000)  # Garante que fica por cima de tudo
-        self.scene.addItem(self._selection_overlay)
+        self.selection_overlay_group.setPen(highlight_pen)
+        self.selection_overlay_group.setBrush(QBrush(QColor(251, 191, 36, 120)))
+        self.selection_overlay_group.setZValue(1000)  # Garante que fica por cima de tudo
+        self.scene.addItem(self.selection_overlay_group)
 
     def initialize_grid(self, bbox):
         """Inicializa a grade espacial a partir do bounding box do arquivo."""
@@ -395,9 +415,9 @@ class CADPreviewCanvas(QGraphicsView):
                 existing_path.addPath(new_path)
                 item.setPath(existing_path)
             else:
-                item = ChunkGraphicsItem(new_path, layer_name, chunk_id, geom_type, color, parent=self.geometry_group)
+                item = ChunkGraphicsItem(new_path, layer_name, chunk_id, geom_type, color, parent=self.geometry_groups.get(geom_type))
                 # Visibilidade inicial: consulta o RenderState
-                item.setVisible(self.state.is_layer_visible(layer_name))
+                item.setVisible(self.state.is_layer_geom_visible(layer_name, geom_type))
                 chunks[key] = item
 
     # ──────────────────────────────────────────────
@@ -437,7 +457,7 @@ class CADPreviewCanvas(QGraphicsView):
                 # Incremental: adiciona ao item existente
                 label_chunks[chunk_id].add_labels(labels)
             else:
-                item = LabelChunkItem(layer_name, chunk_id, parent=self.label_group)
+                item = LabelChunkItem(layer_name, chunk_id, parent=self.label_groups.get("Text"))
                 item.add_labels(labels)
                 # Visibilidade inicial: consulta o RenderState
                 item.setVisible(self.state.is_labels_visible(layer_name))
@@ -447,12 +467,13 @@ class CADPreviewCanvas(QGraphicsView):
     # Visibilidade (via RenderState)
     # ──────────────────────────────────────────────
 
-    def toggle_layer_visibility(self, layer_name, is_visible):
-        """Alterna visibilidade dos itens GEOMÉTRICOS de uma camada."""
-        self.state.set_layer_visible(layer_name, is_visible)
+    def toggle_layer_visibility(self, layer_name, geom_type, is_visible):
+        """Alterna visibilidade dos itens GEOMÉTRICOS de uma camada por tipo geométrico."""
+        self.state.set_layer_geom_visible(layer_name, geom_type, is_visible)
         if layer_name in self.layers_items:
-            for item in self.layers_items[layer_name]["geometry"].values():
-                item.setVisible(is_visible)
+            for (chunk_id, g_type, color), item in self.layers_items[layer_name]["geometry"].items():
+                if g_type == geom_type:
+                    item.setVisible(is_visible)
         self._update_selection_overlay()
 
     def toggle_layer_labels(self, layer_name, is_visible):
@@ -603,12 +624,18 @@ class CADPreviewCanvas(QGraphicsView):
         except Exception as e:
             logger.error(f"Erro ao construir índice espacial: {e}", exc_info=True)
 
-    def _query_point(self, scene_x, scene_y, tolerance=5.0):
-        """Consulta pontual ao índice espacial. Filtra as visíveis e escolhe a mais próxima."""
+    def _query_point(self, scene_x, scene_y, tolerance=None):
+        """Consulta pontual ao índice espacial usando tolerância dinâmica baseada no zoom. Filtra visíveis e ordena por proximidade."""
         if not self._spatial_index:
             return []
         try:
             from shapely.geometry import box, Point
+
+            if tolerance is None:
+                scale = self.transform().m11()
+                tolerance = 12.0 / scale if scale > 0 else 5.0
+
+            tolerance = max(0.001, min(tolerance, 10000.0))
 
             # Converte coordenadas da cena para coordenadas CAD originais
             orig_x = scene_x + self.min_x
@@ -626,17 +653,20 @@ class CADPreviewCanvas(QGraphicsView):
                 if idx < len(self._index_handles):
                     handle = self._index_handles[idx]
                     feat = self._handle_to_feature.get(handle)
-                    # Apenas permite selecionar feições de camadas visíveis
-                    if feat and self.state.is_layer_visible(feat["layer"]):
-                        reg_feat = self.feature_registry.get(handle)
-                        if reg_feat and reg_feat["geometry"]:
-                            dist = click_pt.distance(reg_feat["geometry"])
-                            candidates.append((handle, dist))
+                    if feat:
+                        layer_name = feat["layer"]
+                        geom_type = feat["geom_type"]
+                        # Apenas permite selecionar feições de camadas e tipos geométricos visíveis
+                        if self.state.is_layer_geom_visible(layer_name, geom_type):
+                            reg_feat = self.feature_registry.get(handle)
+                            if reg_feat and reg_feat["geometry"]:
+                                dist = click_pt.distance(reg_feat["geometry"])
+                                if dist <= tolerance:
+                                    candidates.append((handle, dist))
 
-            # Escolhe o handle que tiver a menor distância geométrica ao clique
             if candidates:
                 candidates.sort(key=lambda x: x[1])
-                return [candidates[0][0]]
+                return [c[0] for c in candidates]
             return []
         except Exception as e:
             logger.warning(f"Erro na consulta espacial pontual: {e}")
@@ -662,8 +692,11 @@ class CADPreviewCanvas(QGraphicsView):
                 if idx < len(self._index_handles):
                     handle = self._index_handles[idx]
                     feat = self._handle_to_feature.get(handle)
-                    if feat and self.state.is_layer_visible(feat["layer"]):
-                        visible_handles.append(handle)
+                    if feat:
+                        layer_name = feat["layer"]
+                        geom_type = feat["geom_type"]
+                        if self.state.is_layer_geom_visible(layer_name, geom_type):
+                            visible_handles.append(handle)
             return visible_handles
         except Exception as e:
             logger.warning(f"Erro na consulta espacial por caixa: {e}")
@@ -688,7 +721,7 @@ class CADPreviewCanvas(QGraphicsView):
     def _update_selection_overlay(self):
         """Reconstrói o path de overlay destacando estritamente as feições selecionadas e visíveis."""
         if not self.state.selected_handles:
-            self._selection_overlay.setPath(QPainterPath())
+            self.selection_overlay_group.setPath(QPainterPath())
             return
 
         overlay_path = QPainterPath()
@@ -701,11 +734,14 @@ class CADPreviewCanvas(QGraphicsView):
 
         for handle in self.state.selected_handles:
             feat = self._handle_to_feature.get(handle)
-            # Apenas exibe highlight se a feição existir e a camada da feição estiver visível
-            if not feat or not self.state.is_layer_visible(feat["layer"]):
+            if not feat:
+                continue
+            layer_name = feat["layer"]
+            geom_type = feat["geom_type"]
+            # Apenas exibe highlight se a camada e tipo da feição estiverem visíveis
+            if not self.state.is_layer_geom_visible(layer_name, geom_type):
                 continue
             
-            geom_type = feat["geom_type"]
             coords = feat["coords"]
             if not coords:
                 continue
@@ -733,14 +769,26 @@ class CADPreviewCanvas(QGraphicsView):
                 for pt in coords[1:]:
                     overlay_path.lineTo(pt[0] - offset_x, offset_y - pt[1])
 
-        self._selection_overlay.setPath(overlay_path)
+        self.selection_overlay_group.setPath(overlay_path)
 
     # ──────────────────────────────────────────────
     # Eventos de Mouse (Seleção)
     # ──────────────────────────────────────────────
 
     def mousePressEvent(self, event):
-        """Captura clique para iniciar seleção ou rubber band."""
+        """Captura clique para iniciar seleção, rubber band ou pan temporário com botão central do mouse."""
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._middle_pan_active = True
+            self._middle_pan_start = event.position().toPoint()
+            self._saved_drag_mode = self.dragMode()
+            self._saved_cursor = self.cursor()
+
+            # Ativa modo de arraste no GraphicsView
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+
         if self.state.is_selection_mode() and event.button() == Qt.MouseButton.LeftButton:
             self._rubber_origin = event.position().toPoint()
             if not self._rubber_band:
@@ -754,7 +802,21 @@ class CADPreviewCanvas(QGraphicsView):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """Atualiza rubber band durante arraste de seleção."""
+        """Atualiza rubber band ou executa pan com botão central."""
+        if self._middle_pan_active and self._middle_pan_start:
+            current_pos = event.position().toPoint()
+            delta = current_pos - self._middle_pan_start
+            self._middle_pan_start = current_pos
+
+            h_bar = self.horizontalScrollBar()
+            v_bar = self.verticalScrollBar()
+            if h_bar:
+                h_bar.setValue(h_bar.value() - delta.x())
+            if v_bar:
+                v_bar.setValue(v_bar.value() - delta.y())
+            event.accept()
+            return
+
         if self.state.is_selection_mode() and self._rubber_origin and self._rubber_band:
             from PyQt6.QtCore import QRect
             current = event.position().toPoint()
@@ -765,7 +827,17 @@ class CADPreviewCanvas(QGraphicsView):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        """Finaliza seleção — clique simples ou caixa."""
+        """Finaliza seleção (clique simples com cycling ou caixa) ou restaura modo após pan temporário."""
+        if event.button() == Qt.MouseButton.MiddleButton and self._middle_pan_active:
+            self._middle_pan_active = False
+            self._middle_pan_start = None
+            if self._saved_drag_mode is not None:
+                self.setDragMode(self._saved_drag_mode)
+            if self._saved_cursor is not None:
+                self.viewport().setCursor(self._saved_cursor)
+            event.accept()
+            return
+
         if self.state.is_selection_mode() and event.button() == Qt.MouseButton.LeftButton:
             additive = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
 
@@ -774,17 +846,36 @@ class CADPreviewCanvas(QGraphicsView):
                 rubber_rect = self._rubber_band.geometry()
 
                 if rubber_rect.width() < 10 and rubber_rect.height() < 10:
-                    # Clique simples — consulta pontual com maior tolerância (1.5%)
+                    # Clique simples
                     scene_pos = self.mapToScene(event.position().toPoint())
-                    viewport_rect = self.mapToScene(self.viewport().rect()).boundingRect()
-                    tolerance = max(viewport_rect.width(), viewport_rect.height()) * 0.015
-                    tolerance = max(2.0, min(tolerance, 150.0))
+                    scale = self.transform().m11()
+                    tolerance = 12.0 / scale if scale > 0 else 5.0
 
-                    handles = self._query_point(scene_pos.x(), scene_pos.y(), tolerance)
-                    if handles:
-                        self.select_features(handles, additive=additive)
-                    elif not additive:
-                        self.clear_selection()
+                    candidates = self._query_point(scene_pos.x(), scene_pos.y(), tolerance)
+                    
+                    if candidates:
+                        # Verifica se é um clique consecutivo na mesma área para acionar a seleção cíclica
+                        is_repeat_click = False
+                        if self._last_click_pos is not None:
+                            dist_click = (scene_pos - self._last_click_pos).manhattanLength()
+                            if dist_click < 5.0:
+                                is_repeat_click = True
+
+                        if is_repeat_click and self._cycling_candidates:
+                            self._cycling_index = (self._cycling_index + 1) % len(self._cycling_candidates)
+                            handle_to_select = self._cycling_candidates[self._cycling_index]
+                            self.select_features([handle_to_select], additive=additive)
+                        else:
+                            self._last_click_pos = scene_pos
+                            self._cycling_candidates = candidates
+                            self._cycling_index = 0
+                            self.select_features([candidates[0]], additive=additive)
+                    else:
+                        self._last_click_pos = None
+                        self._cycling_candidates = []
+                        self._cycling_index = 0
+                        if not additive:
+                            self.clear_selection()
                 else:
                     # Seleção por caixa
                     top_left = self.mapToScene(rubber_rect.topLeft())

@@ -235,7 +235,14 @@ class CADGeometryWorker(QObject):
                 self._emit_label_buffers(label_buffers)
 
             # Informa a lista final de camadas consolidadas à interface em um único lote
-            layers_data = [(layer, layer_types[layer], count) for layer, count in layer_counts.items()]
+            layer_geom_counts = {}
+            for item in self.parsed_features:
+                layer_name = item.get("layer")
+                geom_type = item.get("geom_type")
+                if layer_name and geom_type:
+                    layer_geom_counts[(layer_name, geom_type)] = layer_geom_counts.get((layer_name, geom_type), 0) + 1
+
+            layers_data = [(layer, geom, count) for (layer, geom), count in layer_geom_counts.items()]
             self.layers_found.emit(layers_data)
 
             self.progress_changed.emit(100)
