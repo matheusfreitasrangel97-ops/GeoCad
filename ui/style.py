@@ -190,6 +190,39 @@ QTreeView::item:selected {
     font-weight: bold;
 }
 
+QTreeView::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    background-color: #ffffff;
+}
+
+QTreeView::indicator:hover {
+    border-color: #0d9488;
+    background-color: #f0fdfa;
+}
+
+QTreeView::indicator:checked {
+    border-color: #0d9488;
+    background-color: #0d9488;
+}
+
+QTreeView::indicator:checked:hover {
+    border-color: #0f766e;
+    background-color: #0f766e;
+}
+
+QTreeView::indicator:indeterminate {
+    border-color: #0d9488;
+    background-color: #ccfbf1;
+}
+
+QTreeView::indicator:indeterminate:hover {
+    border-color: #0f766e;
+    background-color: #a7f3d0;
+}
+
 QHeaderView::section {
     background-color: #f1f5f9;
     color: #0f766e;

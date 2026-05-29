@@ -83,6 +83,7 @@ class MainWindow(QMainWindow):
         self.detected_crs = None
         self.crs_status_level = "WARNING"
         self.all_parsed_features = []
+        self.all_layers_data = []
 
         self.setup_ui()
         self.detect_bundled_converter()
@@ -158,7 +159,6 @@ class MainWindow(QMainWindow):
         self.tree_model.setHorizontalHeaderLabels(["Camada", "Tipo", "Feições"])
         self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
         self.tree_view.expanded.connect(self.on_tree_node_expanded)
-        self.tree_view.clicked.connect(self.on_tree_node_clicked)
 
         # Habilita menu de contexto de clique direito nas camadas
         self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -579,9 +579,10 @@ class MainWindow(QMainWindow):
 
     def add_layers_batch(self, layers_data):
         """Constrói a árvore visual das camadas em lote."""
-        # Registra tudo como visível por padrão no RenderState do canvas
+        self.all_layers_data = layers_data
+        # Registra tudo como invisível por padrão no RenderState do canvas
         for layer_name, geom_type, count in layers_data:
-            self.preview_canvas.state.set_layer_geom_visible(layer_name, geom_type, True)
+            self.preview_canvas.state.set_layer_geom_visible(layer_name, geom_type, False)
         LayerTreeBuilder.build_tree(self.tree_model, layers_data)
 
     # ──────────────────────────────────────────────
@@ -729,57 +730,27 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────
 
     def on_layer_checkbox_changed(self, item):
-        """Sincroniza visibilidade das camadas e grupos ao alterar checkboxes de forma recursiva."""
+        """Sincroniza visibilidade das camadas e grupos ao alterar checkboxes a partir do RenderState."""
         if item.column() != 0:
             return
 
-        self.tree_model.itemChanged.disconnect(self.on_layer_checkbox_changed)
-        try:
-            # Propaga o estado para baixo recursivamente
-            def propagate_down(node, state):
-                if node.hasChildren():
-                    for r in range(node.rowCount()):
-                        child = node.child(r, 0)
-                        if child:
-                            child.setCheckState(state)
-                            propagate_down(child, state)
-                
-                # Altera o estado do próprio nó se for folha (camada CAD real)
-                data = node.data(Qt.ItemDataRole.UserRole)
-                if data and isinstance(data, tuple) and len(data) == 2:
-                    layer_name, geom_type = data
-                    self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, state == Qt.CheckState.Checked)
+        state = item.checkState()
+        is_visible = (state == Qt.CheckState.Checked)
 
-            # Sincroniza os estados para cima (nós pais)
-            def propagate_up(node):
-                parent = node.parent()
-                if not parent:
-                    return
-                checked_count = 0
-                unchecked_count = 0
-                child_count = parent.rowCount()
-                for r in range(child_count):
-                    child = parent.child(r, 0)
-                    if child:
-                        state = child.checkState()
-                        if state == Qt.CheckState.Checked:
-                            checked_count += 1
-                        elif state == Qt.CheckState.Unchecked:
-                            unchecked_count += 1
-
-                if checked_count == child_count:
-                    parent.setCheckState(Qt.CheckState.Checked)
-                elif unchecked_count == child_count:
-                    parent.setCheckState(Qt.CheckState.Unchecked)
-                else:
-                    parent.setCheckState(Qt.CheckState.PartiallyChecked)
-                propagate_up(parent)
-
-            state = item.checkState()
-            propagate_down(item, state)
-            propagate_up(item)
-        finally:
-            self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
+        data = item.data(Qt.ItemDataRole.UserRole)
+        # Se for um nó de camada (UserRole é uma tupla de 2 elementos)
+        if data and isinstance(data, tuple) and len(data) == 2:
+            layer_name, geom_type = data
+            self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, is_visible)
+        # Se for um nó raiz (UserRole é uma string com a chave do tipo geométrico)
+        elif data and isinstance(data, str):
+            geom_type = data
+            for layer_name, g_type, count in self.all_layers_data:
+                if g_type == geom_type:
+                    self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, is_visible)
+        
+        # Sincroniza a árvore visual com o RenderState do canvas
+        self.sync_tree_checkboxes()
 
     def select_all_layers(self):
         """Marca todas as camadas na árvore como selecionadas."""
@@ -790,26 +761,63 @@ class MainWindow(QMainWindow):
         self.set_all_layers_check_state(Qt.CheckState.Unchecked)
 
     def set_all_layers_check_state(self, state):
-        """Define o estado de checkstate para todas as camadas de forma recursiva."""
+        """Define o estado de visibilidade de todas as camadas e depois sincroniza a árvore."""
+        is_visible = (state == Qt.CheckState.Checked)
+        for layer_name, geom_type, count in self.all_layers_data:
+            self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, is_visible)
+        self.sync_tree_checkboxes()
+
+    def sync_tree_checkboxes(self):
+        """Sincroniza o estado de todos os checkboxes da árvore com o RenderState do canvas."""
         self.tree_model.itemChanged.disconnect(self.on_layer_checkbox_changed)
         try:
-            def apply_state(item):
-                item.setCheckState(state)
-                if item.hasChildren():
-                    for r in range(item.rowCount()):
-                        child = item.child(r, 0)
-                        if child:
-                            apply_state(child)
-                
-                data = item.data(Qt.ItemDataRole.UserRole)
-                if data and isinstance(data, tuple) and len(data) == 2:
-                    layer_name, geom_type = data
-                    self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, state == Qt.CheckState.Checked)
-
             for r in range(self.tree_model.rowCount()):
                 root_item = self.tree_model.item(r, 0)
-                if root_item:
-                    apply_state(root_item)
+                if not root_item:
+                    continue
+
+                geom_type = root_item.data(Qt.ItemDataRole.UserRole)
+                
+                # Sincroniza filhos (camadas), se já estiverem populados
+                checked_count = 0
+                unchecked_count = 0
+                child_count = root_item.rowCount()
+                
+                # Se o único filho for "Carregando...", ignoramos a contagem dos filhos
+                is_lazy = (child_count == 1 and root_item.child(0, 0).text() == "Carregando...")
+
+                if not is_lazy:
+                    for c in range(child_count):
+                        child_item = root_item.child(c, 0)
+                        if child_item:
+                            data = child_item.data(Qt.ItemDataRole.UserRole)
+                            if data and isinstance(data, tuple) and len(data) == 2:
+                                layer_name, g_type = data
+                                is_visible = self.preview_canvas.state.is_layer_geom_visible(layer_name, g_type)
+                                child_item.setCheckState(Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked)
+                                if is_visible:
+                                    checked_count += 1
+                                else:
+                                    unchecked_count += 1
+                    
+                    # Atualiza o estado do nó raiz
+                    if checked_count == child_count:
+                        root_item.setCheckState(Qt.CheckState.Checked)
+                    elif unchecked_count == child_count:
+                        root_item.setCheckState(Qt.CheckState.Unchecked)
+                    else:
+                        root_item.setCheckState(Qt.CheckState.PartiallyChecked)
+                else:
+                    # Se o grupo está colapsado (lazy), o seu próprio estado depende do RenderState de suas camadas
+                    layers_of_type = [l for l in self.all_layers_data if l[1] == geom_type]
+                    if layers_of_type:
+                        checked_layers = sum(1 for l_name, g_type, _ in layers_of_type if self.preview_canvas.state.is_layer_geom_visible(l_name, g_type))
+                        if checked_layers == len(layers_of_type):
+                            root_item.setCheckState(Qt.CheckState.Checked)
+                        elif checked_layers == 0:
+                            root_item.setCheckState(Qt.CheckState.Unchecked)
+                        else:
+                            root_item.setCheckState(Qt.CheckState.PartiallyChecked)
         finally:
             self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
 
@@ -847,14 +855,20 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
-        # 👁️ Mostrar layer (marca checkbox)
+        # 👁️ Mostrar layer
         show_action = QAction("👁️ Mostrar layer", self)
-        show_action.triggered.connect(lambda: item.setCheckState(Qt.CheckState.Checked))
+        show_action.triggered.connect(lambda: (
+            self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, True),
+            self.sync_tree_checkboxes()
+        ))
         menu.addAction(show_action)
 
-        # 🚫 Ocultar layer (desmarca checkbox)
+        # 🚫 Ocultar layer
         hide_action = QAction("🚫 Ocultar layer", self)
-        hide_action.triggered.connect(lambda: item.setCheckState(Qt.CheckState.Unchecked))
+        hide_action.triggered.connect(lambda: (
+            self.preview_canvas.toggle_layer_visibility(layer_name, geom_type, False),
+            self.sync_tree_checkboxes()
+        ))
         menu.addAction(hide_action)
 
         menu.addSeparator()
@@ -1053,53 +1067,27 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def on_tree_node_expanded(self, index):
-        """Carrega as feições individuais sob demanda quando a camada é expandida (Lazy Loading)."""
+        """Popula sob demanda as camadas do grupo de geometria expandido (Lazy Loading de layers)."""
         source_index = self.proxy_model.mapToSource(index)
         item = self.tree_model.itemFromIndex(source_index)
         if not item:
             return
 
-        data = item.data(Qt.ItemDataRole.UserRole)
-        if not data or not isinstance(data, tuple) or len(data) != 2:
-            return
-
-        layer_name, geom_type = data
-
-        # Verifica se o nó possui o filho dummy "Carregando..." e o substitui pelas feições reais
+        # Verifica se o nó possui o filho dummy "Carregando..." e o substitui
         if item.rowCount() == 1 and item.child(0, 0).text() == "Carregando...":
-            item.removeRow(0)
+            # Desconecta temporariamente o sinal itemChanged para evitar triggers de UI
+            self.tree_model.itemChanged.disconnect(self.on_layer_checkbox_changed)
+            try:
+                item.removeRow(0)
+                geom_type = item.data(Qt.ItemDataRole.UserRole)
+                if geom_type and isinstance(geom_type, str):
+                    LayerTreeBuilder.populate_layer_nodes(item, geom_type, self.all_layers_data)
+            finally:
+                self.tree_model.itemChanged.connect(self.on_layer_checkbox_changed)
+            
+            # Sincroniza a árvore com o RenderState do canvas (especialmente o estado do pai e novos filhos)
+            self.sync_tree_checkboxes()
 
-            feats = [f for f in self.all_parsed_features if f.get("layer") == layer_name and f.get("geom_type") == geom_type]
-
-            geom_lbl_map = {
-                "Point": "Ponto",
-                "LineString": "Linha",
-                "Polygon": "Polígono",
-                "Text": "Texto"
-            }
-            lbl = geom_lbl_map.get(geom_type, "Feição")
-
-            for f in feats:
-                handle = f.get("handle")
-                feat_item = QStandardItem(f"{lbl} #{handle}")
-                feat_item.setCheckable(False)
-                feat_item.setEditable(False)
-                feat_item.setData(handle, Qt.ItemDataRole.UserRole)
-                item.appendRow([feat_item])
-
-    def on_tree_node_clicked(self, index):
-        """Sincroniza o clique na feição da árvore para selecioná-la no canvas."""
-        source_index = self.proxy_model.mapToSource(index)
-        item = self.tree_model.itemFromIndex(source_index)
-        if not item:
-            return
-
-        handle = item.data(Qt.ItemDataRole.UserRole)
-        # Se for um inteiro (handle), seleciona
-        if handle and isinstance(handle, int):
-            modifiers = QApplication.keyboardModifiers()
-            additive = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-            self.preview_canvas.select_features([handle], additive=additive)
 
     def check_for_updates(self):
         """Dispara a checagem assíncrona por novas versões do GeoCad."""
