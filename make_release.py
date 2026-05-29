@@ -69,11 +69,26 @@ def main():
         "installer.iss"
     ]
     
-    # 1. Cria o arquivo ZIP
+    # 1. Cria a versão inicial do version.json localmente (com hash temporário)
+    download_url = f"https://github.com/{REPO}/releases/download/{TAG_NAME}/{zip_filename}"
+    version_data = {
+        "version": VERSION,
+        "sha256": "placeholder",
+        "download_url": download_url
+    }
+    with open("version.json", "w", encoding="utf-8") as f:
+        json.dump(version_data, f, indent=2)
+    print("version.json inicial criado.")
+
+    # 2. Cria o arquivo ZIP contendo o version.json inicial
     if os.path.exists(zip_filename):
         os.remove(zip_filename)
         
     with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as z:
+        # Adiciona version.json inicial
+        z.write("version.json")
+        print("Adicionado version.json inicial ao ZIP.")
+        
         # Adiciona arquivos individuais
         for file in include_files:
             if os.path.exists(file):
@@ -92,32 +107,21 @@ def main():
                         z.write(filepath)
                         print(f"Adicionado: {filepath}")
 
-    print("ZIP gerado com sucesso. Calculando hash SHA256...")
+    print("ZIP gerado com sucesso. Calculando hash SHA256 do ZIP final contendo version.json...")
     
-    # 2. Calcula SHA256
+    # 3. Calcula SHA256 do ZIP final
     sha256_hash = hashlib.sha256()
     with open(zip_filename, "rb") as f:
         for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
     sha256_val = sha256_hash.hexdigest()
-    print(f"Hash SHA256 calculado: {sha256_val}")
+    print(f"Hash SHA256 final calculado: {sha256_val}")
     
-    # 3. Atualiza version.json localmente
-    download_url = f"https://github.com/{REPO}/releases/download/{TAG_NAME}/{zip_filename}"
-    version_data = {
-        "version": VERSION,
-        "sha256": sha256_val,
-        "download_url": download_url
-    }
-    
+    # 4. Atualiza version.json localmente com o hash definitivo do ZIP final
+    version_data["sha256"] = sha256_val
     with open("version.json", "w", encoding="utf-8") as f:
         json.dump(version_data, f, indent=2)
-    print("version.json atualizado localmente.")
-    
-    # Adiciona version.json atualizado dentro do ZIP
-    with zipfile.ZipFile(zip_filename, "a", zipfile.ZIP_DEFLATED) as z:
-        z.write("version.json")
-    print("version.json atualizado injetado no GeoCad.zip.")
+    print("version.json final atualizado localmente com o hash definitivo.")
 
     # 4. Criar a release no GitHub via API
     print("Conectando à API do GitHub para criar a Release...")
