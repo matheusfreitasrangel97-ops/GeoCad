@@ -12,8 +12,11 @@ import json
 import requests
 import subprocess
 
+# Garante que o diretório atual está no path para importação modular
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from geocad.version import VERSION
+
 REPO = "matheusfreitasrangel97-ops/GeoCad"
-VERSION = "0.1.0"
 TAG_NAME = f"v{VERSION}"
 
 def get_github_token():
