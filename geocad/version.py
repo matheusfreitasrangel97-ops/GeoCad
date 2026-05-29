@@ -4,4 +4,4 @@ GeoCad version configuration.
 """
 
 APP_NAME = "GeoCad"
-VERSION = "0.1.3"
+VERSION = "0.1.4"
