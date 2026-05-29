@@ -167,11 +167,23 @@ def restart_app(app_executable):
     """Reinicia o GeoCad em uma nova console do sistema."""
     log_message(f"Reiniciando o aplicativo: '{app_executable}'...")
     try:
+        # Limpa variáveis de ambiente do PyInstaller para evitar conflitos no processo filho
+        env = os.environ.copy()
+        env.pop('_MEIPASS', None)
+        env.pop('_MEIPASS2', None)
+
+        if sys.platform == "win32":
+            import ctypes
+            try:
+                ctypes.windll.kernel32.SetDllDirectoryW(None)
+            except Exception as e:
+                log_message(f"Falha ao resetar SetDllDirectoryW: {e}")
+
         # Se for script Python (desenvolvimento), executa via python
         if app_executable.endswith('.py'):
-            subprocess.Popen([sys.executable, app_executable], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen([sys.executable, app_executable], env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:
-            subprocess.Popen([app_executable], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen([app_executable], env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
         log_message("Aplicativo reiniciado.")
     except Exception as e:
         log_message(f"Erro ao reiniciar o aplicativo: {e}")

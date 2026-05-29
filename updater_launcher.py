@@ -44,11 +44,23 @@ def launch_updater_and_exit(zip_path):
         "--pid", str(os.getpid())
     ]
 
+    # Limpa variáveis de ambiente do PyInstaller para evitar conflitos no processo filho
+    env = os.environ.copy()
+    env.pop('_MEIPASS', None)
+    env.pop('_MEIPASS2', None)
+
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            ctypes.windll.kernel32.SetDllDirectoryW(None)
+        except Exception as e:
+            print(f"[LAUNCHER] Falha ao resetar SetDllDirectoryW: {e}")
+
     # Se estiver rodando como executável compilado e o updater.exe existir na pasta
     if is_frozen and os.path.exists(updater_executable):
         cmd = [updater_executable] + args
         print(f"[LAUNCHER] Executando executável compilado: {cmd}")
-        subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        subprocess.Popen(cmd, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
     else:
         # Se for ambiente de desenvolvimento (código fonte), gera um updater.bat temporário que executa o script python
         updater_py = os.path.join(app_dir, "updater_process.py")
@@ -66,7 +78,7 @@ def launch_updater_and_exit(zip_path):
                 f.write("del \"%~f0\"\n")
                 
             print(f"[LAUNCHER] Gerado e executando bat de desenvolvimento: {bat_path}")
-            subprocess.Popen(["cmd.exe", "/c", bat_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen(["cmd.exe", "/c", bat_path], env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
         else:
             # Caso extremo de fallback (cria um arquivo batch temporário que faz o backup e extração via powershell)
             bat_path = os.path.join(tempfile.gettempdir(), "geocad_fallback_updater.bat")
@@ -100,7 +112,7 @@ def launch_updater_and_exit(zip_path):
                 f.write(f"del /q \"{zip_path}\"\n")
                 f.write("del \"%~f0\"\n")
                 
-            subprocess.Popen(["cmd.exe", "/c", bat_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            subprocess.Popen(["cmd.exe", "/c", bat_path], env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
     # Encerra o app principal imediatamente para que o updater consiga escrever nos arquivos
     sys.exit(0)
