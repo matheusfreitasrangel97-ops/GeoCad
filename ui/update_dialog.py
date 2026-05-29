@@ -127,11 +127,15 @@ class UpdateProgressDialog(QDialog):
         self.btn_cancel.setEnabled(False)
         
         # Obter a pasta raiz do aplicativo de forma robusta
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        if os.path.basename(current_dir) == "ui":
-            app_dir = os.path.dirname(current_dir)
+        import sys
+        if getattr(sys, 'frozen', False):
+            app_dir = os.path.dirname(sys.executable)
         else:
-            app_dir = current_dir
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            if os.path.basename(current_dir) == "ui":
+                app_dir = os.path.dirname(current_dir)
+            else:
+                app_dir = current_dir
         updates_dir = os.path.join(app_dir, "updates")
         os.makedirs(updates_dir, exist_ok=True)
         

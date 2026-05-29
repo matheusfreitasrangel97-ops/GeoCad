@@ -37,6 +37,7 @@ def run_build():
         '--onefile',
         '--noconsole',
         '--add-data=bin/*;bin',
+        '--collect-all=pyogrio',
         '--name=GeoCad',
         '--clean'
     ]
